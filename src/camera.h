@@ -8,11 +8,13 @@ class camera {
         double aspect_ratio = 1.0;
         int image_width = 100;
         int samples_per_pixel = 10;
+        int max_depth = 10; //Maximum number of ray bounces into scene
 
         void render(const hittable& world) {
             initialize();
 
             std::cout << "P3\n" << image_width << ' ' << image_height << "\n255\n";
+            auto start = std::chrono::steady_clock::now();
 
             for (int j = 0; j < image_height; j++) {
                 std::clog << "\rScanlines remaining: " << (image_height - j) << ' ' << std::flush;
@@ -20,13 +22,16 @@ class camera {
                     colour pixel_colour(0, 0, 0);
                     for (int sample = 0; sample < samples_per_pixel; sample++) {
                         ray r = get_ray(i,j);
-                        pixel_colour += ray_colour(r, world);
+                        pixel_colour += ray_colour(r, max_depth, world);
                     }
                     write_colour(std::cout, pixel_samples_scale * pixel_colour);
                 }
             }
 
             std::clog << "\rDone.               \n";
+            auto end = std::chrono::steady_clock::now();
+            std::chrono::duration<double> elapsed = end - start;
+            std::clog << "Waited for: " << elapsed.count() << " seconds\n";
         }
 
 
@@ -83,11 +88,16 @@ class camera {
             return vec3(random_double() - 0.5, random_double() - 0.5, 0);
         }
 
-        colour ray_colour(const ray& r, const hittable& world) {
+        colour ray_colour(const ray& r, int depth, const hittable& world) {
+            if(depth <= 0){
+                return colour(0,0,0);
+            }
+            
             hit_record rec;
 
-            if (world.hit(r, interval(0, infinity), rec)) {
-                return 0.5 * (rec.normal + colour(1,1,1));
+            if (world.hit(r, interval(0.001, infinity), rec)) {
+                vec3 direction = rec.normal + random_unit_vector();
+                return 0.5 * ray_colour(ray(rec.p, direction), depth - 1, world);
             }
             
 
