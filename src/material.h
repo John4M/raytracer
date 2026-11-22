@@ -2,6 +2,7 @@
 #define MATERIAL_H
 
 #include "hittable.h"
+#include "sampler.h"
 
 class material {
     public:
@@ -65,8 +66,11 @@ class dielectric : public material {
 
             bool cannot_refract = ri * sin_theta > 1.0;
             vec3 direction;
+            // Consume this dimension even for total internal reflection so the
+            // next glass hit remains aligned to the next stratified dimension.
+            double u = g_sampler.next();
 
-            if (cannot_refract || reflectance(cos_theta, ri) > random_double()){
+            if (cannot_refract || reflectance(cos_theta, ri) > u){
                 direction = reflect(unit_direction, rec.normal);
             } else {
                 direction = refract(unit_direction, rec.normal, ri);

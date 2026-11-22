@@ -1,6 +1,8 @@
 #ifndef CAMERA_H
 #define CAMERA_H
 
+#include <stdexcept>
+
 #include "hittable.h"
 #include "material.h"
 
@@ -21,9 +23,16 @@ class camera {
                 std::clog << "\rScanlines remaining: " << (image_height - j) << ' ' << std::flush;
                 for (int i = 0; i < image_width; i++) {
                     colour pixel_colour(0, 0, 0);
-                    for (int sample = 0; sample < samples_per_pixel; sample++) {
-                        ray r = get_ray(i,j);
-                        pixel_colour += ray_colour(r, max_depth, world);
+                    // Prepare independent glass-decision dimensions once per
+                    // pixel; each camera sample then consumes its own slots.
+                    g_sampler.begin_pixel(samples_per_pixel, glass_stratified_dimensions);
+                    for (int s_j = 0; s_j < sqrt_spp; s_j++) {
+                        for (int s_i = 0; s_i < sqrt_spp; s_i++) {
+                            int sample_index = s_j * sqrt_spp + s_i;
+                            g_sampler.begin_sample(sample_index);
+                            ray r = get_ray(i, j, s_i, s_j);
+                            pixel_colour += ray_colour(r, max_depth, world);
+                        }
                     }
                     write_colour(std::cout, pixel_samples_scale * pixel_colour);
                 }
@@ -39,6 +48,9 @@ class camera {
 
     private:
         int image_height;
+        static constexpr int glass_stratified_dimensions = 4;
+        int sqrt_spp;                 // Number of grid cells along each pixel axis.
+        double recip_sqrt_spp;        // Cached 1/sqrt_spp for pixel-space offsets.
         double pixel_samples_scale; //Colour scale factor for sum of pixel samples
         point3 center;
         point3 pixel00_loc;
@@ -49,7 +61,18 @@ class camera {
             image_height = int(image_width / aspect_ratio);
             image_height = (image_height < 1) ? 1 : image_height;
 
-            pixel_samples_scale = 1.0 / samples_per_pixel;
+            if (samples_per_pixel <= 0) {
+                throw std::invalid_argument("samples_per_pixel must be positive");
+            }
+
+            // A square grid gives exactly one ray to every cell and keeps the
+            // requested samples_per_pixel equal to the number actually traced.
+            sqrt_spp = int(std::sqrt(samples_per_pixel));
+            if (sqrt_spp * sqrt_spp != samples_per_pixel) {
+                throw std::invalid_argument("samples_per_pixel must be a perfect square for stratified pixel sampling");
+            }
+            recip_sqrt_spp = 1.0 / sqrt_spp;
+            pixel_samples_scale = 1.0 / (sqrt_spp * sqrt_spp);
 
             center = point3(0, 0, 0);
 
@@ -71,13 +94,14 @@ class camera {
             pixel00_loc = viewport_upper_left + 0.5 * (pixel_delta_u + pixel_delta_v);
         }
 
-        ray get_ray(int i, int j) const {
-            //Generate camera ray originating from origin directed at randomly samples point around pixel location i,j
-
-            auto offset = sample_square();
+        ray get_ray(int i, int j, int s_i, int s_j) const {
+            // s_i + random_double() lies in [s_i, s_i+1); scaling by 1/m and
+            // centering maps that jitter into this cell within [-0.5, 0.5).
+            auto px = -0.5 + recip_sqrt_spp * (s_i + random_double());
+            auto py = -0.5 + recip_sqrt_spp * (s_j + random_double());
             auto pixel_sample = pixel00_loc
-                                + ((i + offset.x()) * pixel_delta_u)
-                                + ((j + offset.y()) * pixel_delta_v);
+                                + ((i + px) * pixel_delta_u)
+                                + ((j + py) * pixel_delta_v);
             
             auto ray_origin = center;
             auto ray_direction = pixel_sample - ray_origin;
