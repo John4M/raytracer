@@ -5,11 +5,23 @@
 
 class material;
 
+namespace object_ids {
+enum : int {
+    sky = 0,
+    ground,
+    matte,
+    glass,
+    metal,
+    count
+};
+}
+
 class hit_record {
     public:
         point3 p;
         vec3 normal;
         shared_ptr<material> mat;
+        int object_id = 0;
         double t;
         bool front_face;
 

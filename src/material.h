@@ -1,6 +1,8 @@
 #ifndef MATERIAL_H
 #define MATERIAL_H
 
+#include <cmath>
+
 #include "hittable.h"
 #include "sampler.h"
 
@@ -18,7 +20,13 @@ class lambertian : public material {
         lambertian(const colour& albedo) : albedo(albedo) {}
 
         bool scatter(const ray& r_in, const hit_record& rec, colour& attenuation, ray& scattered) const override {
-            auto scatter_direction = rec.normal + random_unit_vector();
+            // The spherical parameterization is uniform: z is uniform on
+            // [-1, 1], and phi is uniform over a full turn. When stratification
+            // is disabled, retain the original rejection-based sampler.
+            vec3 random_direction = g_sampler.stratifies_diffuse()
+                ? g_sampler.random_unit_sphere_direction()
+                : random_unit_vector();
+            auto scatter_direction = rec.normal + random_direction;
 
             //Catch bad scatter direction
             if (scatter_direction.near_zero())
@@ -68,7 +76,7 @@ class dielectric : public material {
             vec3 direction;
             // Consume this dimension even for total internal reflection so the
             // next glass hit remains aligned to the next stratified dimension.
-            double u = g_sampler.next();
+            double u = g_sampler.next_glass();
 
             if (cannot_refract || reflectance(cos_theta, ri) > u){
                 direction = reflect(unit_direction, rec.normal);
@@ -86,7 +94,7 @@ class dielectric : public material {
             double refraction_index;
 
             static double reflectance(double cosine, double refraction_index) {
-                //Schkick's approximation for reflectance
+                //Schlick's approximation for reflectance
                 auto r0 = (1 - refraction_index) / (1 + refraction_index);
                 r0 = r0*r0;
                 return r0 + (1-r0)*std::pow((1 - cosine), 5);
